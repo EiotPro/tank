@@ -1,0 +1,268 @@
+# LoRa Water Tank Monitoring System
+
+A LoRa-based water tank monitoring system with transmitter (TX) and receiver (RX) nodes for real-time water level monitoring using Raspberry Pi Pico.
+
+## System Overview
+
+### Transmitter (TX Node)
+- **Hardware**: Raspberry Pi Pico + RAK3172 LoRa module + water level sensor
+- **Function**: Reads analog water level sensor, converts to 2-byte HEX payload, transmits via LoRa P2P
+- **Transmission**: Every 10 seconds using configured LoRa parameters
+- **Output**: Serial monitoring of raw sensor values, calculated water levels, and transmission status
+
+### Receiver (RX Node)
+- **Hardware**: Raspberry Pi Pico + RAK3172 LoRa module
+- **Function**: Receives LoRa P2P packets, parses HEX payload, calculates water level percentage
+- **Features**: Real-time Serial output, automatic RX re-enabling, packet validation
+- **Output**: Serial display of received data, decoded water levels, and percentages
+
+## Current Features
+
+### Core Functionality
+- ✅ **LoRa P2P Communication**: Point-to-point LoRa transmission between TX and RX nodes
+- ✅ **HEX Payload Processing**: 2-byte hexadecimal encoding/decoding for water level data
+- ✅ **Analog Sensor Reading**: TX reads water level sensor (0-1023 range)
+- ✅ **Water Level Calculation**: Maps sensor values to centimeters (0-200cm range)
+- ✅ **Percentage Calculation**: Converts water level to tank fill percentage
+- ✅ **Serial Monitoring**: Real-time output for debugging and monitoring
+- ✅ **Automatic RX Re-enabling**: RX automatically re-enters receive mode after processing packets
+
+### Technical Features
+- ✅ **Packet Parsing**: Extracts payload from "+EVT:RXP2P" responses
+- ✅ **Hex-to-Decimal Conversion**: Converts received HEX strings to integer values
+- ✅ **Data Validation**: Constrains values within valid ranges
+- ✅ **Error Handling**: Graceful handling of malformed packets
+- ✅ **Serial Debugging**: Comprehensive logging for troubleshooting
+
+### Hardware Integration
+- ✅ **RAK3172 LoRa Module**: AT command interface via Serial1
+- ✅ **Raspberry Pi Pico**: Arduino framework compatibility
+- ✅ **Analog Sensor Input**: A0 pin for water level sensor
+- ✅ **GPIO Control**: Reset pin control for LoRa module initialization
+
+## Project Structure
+
+```
+/src              → Source code (TX/RX firmware)
+  /tx/main.cpp    → Transmitter firmware
+  /rx/main.cpp    → Receiver firmware
+/include          → Header files
+  /config.h       → Configuration constants
+/assets           → Future images/visuals
+README.md         → This documentation
+platformio.ini    → PlatformIO configuration
+```
+
+## Hardware Requirements
+
+### TX Node (Transmitter)
+- Raspberry Pi Pico
+- RAK3172 LoRa module (connected to Serial1)
+- Water level sensor (analog output, connected to A0)
+- Power supply (5V USB or battery)
+
+### RX Node (Receiver)
+- Raspberry Pi Pico
+- RAK3172 LoRa module (connected to Serial1)
+- Power supply (5V USB)
+
+### Pin Connections
+- **RAK3172 Reset**: GPIO 2 (both TX and RX)
+- **Water Sensor**: A0 (TX only)
+- **Serial1**: GPIO 4 (TX), GPIO 5 (RX) for LoRa communication
+
+## LoRa Configuration
+
+- **Frequency**: 865 MHz (India region)
+- **Spreading Factor**: 7
+- **Bandwidth**: 125 kHz
+- **Coding Rate**: 4/5
+- **Preamble Length**: 8
+- **TX Power**: 14 dBm
+
+## Installation & Setup
+
+### Prerequisites
+- PlatformIO IDE or VSCode with PlatformIO extension
+- Raspberry Pi Pico boards (standard or Pico W)
+- RAK3172 LoRa modules
+- Water level sensor (analog type)
+
+### Software Setup
+
+1. **Clone and Setup Project**
+   ```bash
+   git clone <repository>
+   cd lora-water-tank-monitor
+   ```
+
+2. **Open in PlatformIO**
+   - Launch PlatformIO IDE
+   - Open the project folder
+
+3. **Configure Settings** (Optional)
+   - Edit `include/config.h` to customize:
+     - LoRa frequency and parameters
+     - Tank maximum depth (default: 200cm)
+     - Transmission interval (default: 10 seconds)
+     - Serial baud rates
+
+4. **Upload Firmware**
+   - Connect TX Pico and upload: `pio run -e tx --upload`
+   - Connect RX Pico and upload: `pio run -e rx --upload`
+
+## Usage
+
+### Starting the System
+
+1. **TX Node Operation**
+   - Power on TX Pico
+   - Monitor Serial output for sensor readings
+   - TX will transmit water level data every 10 seconds
+
+2. **RX Node Operation**
+   - Power on RX Pico
+   - Monitor Serial output for received packets
+   - RX will display decoded water level information
+
+### Serial Output Examples
+
+**TX Node:**
+```
+=== LoRa Water Tank TX Node ===
+Initializing...
+--- Water Level Reading ---
+Raw sensor value: 512
+Water level: 100 cm
+Tank fill: 50%
+HEX payload: 0064
+LoRa transmission successful
+```
+
+**RX Node:**
+```
+=== LoRa Water Tank RX Node ===
+Initializing LoRa reception...
+RX Node initialization complete
+LoRa RX: +EVT:RXP2P:0064
+Received HEX payload: 0064
+--- Water Level Data ---
+Water level: 100 cm
+Percentage: 50%
+```
+
+## Configuration Options
+
+### LoRa Parameters (config.h)
+```cpp
+#define LORA_FREQUENCY 865000000      // 865 MHz
+#define LORA_SPREADING_FACTOR 7       // SF7
+#define LORA_BANDWIDTH 1              // 125 kHz
+#define LORA_CODING_RATE 1            // 4/5
+#define LORA_PREAMBLE_LENGTH 8        // 8 symbols
+#define LORA_TX_POWER 14              // 14 dBm
+```
+
+### System Parameters
+```cpp
+#define TRANSMISSION_INTERVAL 10000   // 10 seconds
+#define TANK_MAX_DEPTH 200            // 200 cm
+#define SERIAL_BAUD_RATE 115200       // Serial baud rate
+#define LORA_BAUD_RATE 115200         // LoRa module baud rate
+```
+
+## Development Status
+
+### Current Implementation
+- ✅ Basic LoRa TX/RX communication
+- ✅ Analog sensor reading and conversion
+- ✅ HEX payload encoding/decoding
+- ✅ Serial monitoring and debugging
+- ✅ PlatformIO compatibility
+- ✅ Raspberry Pi Pico support
+
+### Removed Features (Due to Platform Limitations)
+- ❌ WiFi Access Point (not available on standard Pico)
+- ❌ Web server interface (WebServer library unavailable)
+- ❌ File system logging (LittleFS not compatible)
+- ❌ NTP time synchronization (requires WiFi)
+- ❌ Historical data storage (no file system)
+- ❌ JSON API endpoints (no web server)
+
+### Known Limitations
+- No web interface for remote monitoring
+- No data persistence between power cycles
+- No real-time clock without external hardware
+- Serial monitoring only (no network connectivity)
+
+## Future Development Opportunities
+
+### Phase 1: Enhanced Monitoring
+- Add OLED display for local visualization
+- Implement buzzer alerts for low water levels
+- Add multiple sensor support
+- Improve error handling and recovery
+
+### Phase 2: Data Persistence
+- Add SD card module for data logging
+- Implement CSV file storage
+- Add data export functionality
+- Create historical trend analysis
+
+### Phase 3: Connectivity Options
+- Add ESP32-based gateway for WiFi connectivity
+- Implement MQTT communication
+- Create cloud dashboard integration
+- Develop mobile app companion
+
+### Phase 4: Advanced Features
+- Multiple tank monitoring
+- Automated pump control
+- Predictive maintenance alerts
+- Machine learning for sensor calibration
+
+## Troubleshooting
+
+### Common Issues
+
+**TX Node:**
+- No sensor readings: Check A0 connection and sensor power
+- Transmission failures: Verify LoRa module connections and antenna
+- Serial output garbled: Check baud rate settings
+
+**RX Node:**
+- No packets received: Ensure TX is transmitting and antennas are clear
+- Invalid payloads: Check LoRa parameter synchronization
+- Serial not responding: Verify Serial1 pin connections
+
+### Debug Tips
+- Use Serial Monitor at 115200 baud
+- Check LoRa module responses for AT command errors
+- Verify power supply stability
+- Test with known working configurations
+
+## Contributing
+
+This project is designed for easy extension and modification. Key areas for contribution:
+
+- Adding new sensor types
+- Implementing different communication protocols
+- Creating visualization interfaces
+- Optimizing power consumption
+- Adding security features
+
+## License
+
+This project is open-source. Please refer to the license file for details.
+
+## Support
+
+For issues and questions:
+- Check the troubleshooting section
+- Review Serial output for error messages
+- Verify hardware connections
+- Test with minimal configurations
+
+---
+
+**Note**: This documentation reflects the current implementation as of the latest update. The system has been simplified from its original ESP32-based design to work with Raspberry Pi Pico's capabilities and available libraries.
