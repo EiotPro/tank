@@ -15,9 +15,20 @@
 #define TANK_MIN_DEPTH 20            // Minimum tank depth in cm
 
 // RX Node Wi-Fi Configuration
-#define WIFI_SSID "WaterTank_Monitor"
-#define WIFI_PASSWORD "watertank123"
+#define WIFI_SSID "YourWiFiNetwork"
+#define WIFI_PASSWORD "YourWiFiPassword"
 #define WEB_SERVER_PORT 80
+
+// Website Configuration
+#define WEBSITE_HOST "iotlogic.in"
+#define WEBSITE_PORT 80
+#define API_ENDPOINT "/tank/api/tank_update.php"
+#define API_KEY "YOUR_API_KEY_HERE"  // Generate a secure API key
+
+// HTTP Configuration
+#define HTTP_TIMEOUT 5000  // 5 seconds
+#define MAX_RETRY_ATTEMPTS 3
+#define RETRY_DELAY 2000  // 2 seconds between retries
 
 // Data Logging Configuration
 #define MAX_LOG_FILES 10
