@@ -10,20 +10,20 @@
 #define LORA_TX_POWER 14          // 14 dBm
 
 // TX Node Configuration
-#define TRANSMISSION_INTERVAL 10000  // 10 seconds
+#define TRANSMISSION_INTERVAL 5000  // 5 seconds (reduced for easier testing)
 #define TANK_MAX_DEPTH 200           // Maximum tank depth in cm
 #define TANK_MIN_DEPTH 20            // Minimum tank depth in cm
 
 // RX Node Wi-Fi Configuration
-#define WIFI_SSID "YourWiFiNetwork"
-#define WIFI_PASSWORD "YourWiFiPassword"
+#define WIFI_SSID "Amir"
+#define WIFI_PASSWORD "password"
 #define WEB_SERVER_PORT 80
 
 // Website Configuration
-#define WEBSITE_HOST "iotlogic.in"
+#define WEBSITE_HOST "10.252.88.57"  // Your computer's IP address (where XAMPP runs)
 #define WEBSITE_PORT 80
-#define API_ENDPOINT "/tank/api/tank_update.php"
-#define API_KEY "YOUR_API_KEY_HERE"  // Generate a secure API key
+#define API_ENDPOINT "/tank/api/tank_update.php"  // Your XAMPP endpoint
+#define API_KEY "iotlogic"  // Generate a secure API key
 
 // HTTP Configuration
 #define HTTP_TIMEOUT 5000  // 5 seconds
@@ -45,3 +45,4 @@
 #define LORA_BAUD_RATE 115200
 
 #endif // CONFIG_H
+

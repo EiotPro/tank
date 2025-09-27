@@ -1,8 +1,6 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
-#include <Arduino_JSON.h>
 #include "config.h"
 
 // Global variables
@@ -60,66 +58,87 @@ void connectToWiFi() {
 
 // Function to send data to website
 bool sendDataToWebsite(int waterLevel, int percentage) {
-   if (!wifiConnected) {
-     Serial.println("WiFi not connected, skipping data send");
-     return false;
-   }
+    if (!wifiConnected) {
+      Serial.println("WiFi not connected, skipping data send");
+      return false;
+    }
 
-   HTTPClient http;
-   String url = "http://" + String(WEBSITE_HOST) + ":" + String(WEBSITE_PORT) + API_ENDPOINT;
+    WiFiClient client;
+    String url = "http://" + String(WEBSITE_HOST) + ":" + String(WEBSITE_PORT) + API_ENDPOINT;
 
-   // Create JSON payload
-   String jsonPayload = "{\"tank_id\":1,\"level\":" + String(waterLevel) +
-                       ",\"percentage\":" + String(percentage) +
-                       ",\"api_key\":\"" + String(API_KEY) + "\"}";
+    // Create JSON payload
+    String jsonPayload = "{\"tank_id\":1,\"level\":" + String(waterLevel) +
+                        ",\"percentage\":" + String(percentage) +
+                        ",\"api_key\":\"" + String(API_KEY) + "\"}";
 
-   Serial.println("Sending data to: " + url);
-   Serial.println("Payload: " + jsonPayload);
+    Serial.println("Sending data to website...");
+    Serial.println("URL: " + url);
+    Serial.println("Payload: " + jsonPayload);
 
-   http.begin(url);
-   http.addHeader("Content-Type", "application/json");
-   http.setTimeout(HTTP_TIMEOUT);
+    // Connect to server
+    if (!client.connect(WEBSITE_HOST, WEBSITE_PORT)) {
+      Serial.println("Connection to website failed!");
+      return false;
+    }
 
-   int httpResponseCode = http.POST(jsonPayload);
+    // Send HTTP POST request
+    String request = "POST " + String(API_ENDPOINT) + " HTTP/1.1\r\n";
+    request += "Host: " + String(WEBSITE_HOST) + "\r\n";
+    request += "Content-Type: application/json\r\n";
+    request += "Content-Length: " + String(jsonPayload.length()) + "\r\n";
+    request += "Connection: close\r\n\r\n";
+    request += jsonPayload;
 
-   if (httpResponseCode > 0) {
-     String response = http.getString();
-     Serial.println("HTTP Response code: " + String(httpResponseCode));
-     Serial.println("Response: " + response);
+    client.print(request);
 
-     if (httpResponseCode == 200 && response.indexOf("OK") != -1) {
-       Serial.println("Data sent successfully to website");
-       http.end();
-       return true;
-     }
-   } else {
-     Serial.println("Error sending data: " + String(httpResponseCode));
-     Serial.println("Error: " + http.errorToString(httpResponseCode));
-   }
+    // Wait for response
+    unsigned long timeout = millis();
+    while (client.available() == 0) {
+      if (millis() - timeout > HTTP_TIMEOUT) {
+        Serial.println("Client timeout!");
+        client.stop();
+        return false;
+      }
+    }
 
-   http.end();
-   return false;
- }
+    // Read response
+    String response = "";
+    while (client.available()) {
+      response += client.readStringUntil('\r');
+    }
+
+    Serial.println("Response: " + response);
+
+    // Check if response contains "200 OK"
+    if (response.indexOf("200 OK") >= 0) {
+      Serial.println("Data sent successfully to website!");
+      client.stop();
+      return true;
+    } else {
+      Serial.println("Failed to send data to website");
+      client.stop();
+      return false;
+    }
+  }
 
 // Function to retry sending data with exponential backoff
-void retrySendData(int waterLevel, int percentage, int maxAttempts) {
+bool retrySendData(int waterLevel, int percentage, int maxAttempts) {
    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-     Serial.println("Attempt " + String(attempt) + " of " + String(maxAttempts));
+      Serial.println("Attempt " + String(attempt) + " of " + String(maxAttempts));
 
-     if (sendDataToWebsite(waterLevel, percentage)) {
-       return; // Success, exit retry loop
-     }
+      if (sendDataToWebsite(waterLevel, percentage)) {
+        return true; // Success, exit retry loop
+      }
 
-     if (attempt < maxAttempts) {
-       Serial.println("Retrying in " + String(RETRY_DELAY / 1000) + " seconds...");
-       delay(RETRY_DELAY);
-     }
+      if (attempt < maxAttempts) {
+        Serial.println("Retrying in " + String(RETRY_DELAY / 1000) + " seconds...");
+        delay(RETRY_DELAY);
+      }
    }
 
    Serial.println("Failed to send data after " + String(maxAttempts) + " attempts");
+   return false;
  }
-
-
 
 void setup() {
    Serial.begin(SERIAL_BAUD_RATE);
@@ -130,12 +149,17 @@ void setup() {
    digitalWrite(RAK3172_RESET, HIGH);
    delay(2000);
 
-   Serial.println("=== LoRa Water Tank RX Node with WiFi ===");
+   // Give LoRa module time to initialize
+   Serial.println("Waiting for LoRa module initialization...");
+   delay(3000);
+
+   Serial.println("=== LoRa Water Tank RX Node ===");
    Serial.println("Initializing LoRa reception...");
 
    // LoRa P2P configuration
+   Serial.println("Setting LoRa to P2P mode...");
    Serial1.println("AT+NWM=0");  // Set to P2P mode
-   delay(200);
+   delay(500);
 
    // Configure LoRa parameters using config values
    String p2pCommand = "AT+P2P=" +
@@ -146,12 +170,43 @@ void setup() {
                       String(LORA_PREAMBLE_LENGTH) + ":" +
                       String(LORA_TX_POWER);
 
+   Serial.println("Configuring LoRa parameters...");
+   Serial.println("Command: " + p2pCommand);
    Serial1.println(p2pCommand);
-   delay(200);
+   delay(500);
+
+   // Show configured parameters
+   Serial.println("📊 LoRa Parameters Set:");
+   Serial.println("   Frequency: " + String(LORA_FREQUENCY) + " Hz");
+   Serial.println("   Spreading Factor: " + String(LORA_SPREADING_FACTOR));
+   Serial.println("   Bandwidth: " + String(LORA_BANDWIDTH));
+   Serial.println("   Coding Rate: " + String(LORA_CODING_RATE));
+   Serial.println("   Preamble Length: " + String(LORA_PREAMBLE_LENGTH));
+   Serial.println("   TX Power: " + String(LORA_TX_POWER) + " dBm");
 
    // Enable RX
    Serial1.println("AT+PRECV=65535");
+   delay(500);
+
+   // Verify RX mode is active
+   Serial.println("Verifying LoRa RX mode...");
+   Serial1.println("AT");
    delay(200);
+
+   // Additional check for RX status
+   Serial.println("Confirming receiver is listening...");
+   Serial1.println("AT+PRECV=65535");
+   delay(300);
+
+   // Test LoRa module communication
+   Serial.println("Testing LoRa module...");
+   Serial1.println("AT");
+   delay(500);
+
+   // Test P2P configuration
+   Serial.println("Checking P2P configuration...");
+   Serial1.println("AT");
+   delay(500);
 
    // Initialize WiFi
    Serial.println("Initializing WiFi...");
@@ -162,63 +217,106 @@ void setup() {
  }
 
 void loop() {
-   // Check WiFi connection periodically
-   if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
-     if (WiFi.status() != WL_CONNECTED) {
-       Serial.println("WiFi disconnected, attempting to reconnect...");
-       wifiConnected = false;
-       connectToWiFi();
+     // Check WiFi connection periodically
+     if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
+       if (WiFi.status() != WL_CONNECTED) {
+         Serial.println("WiFi disconnected, attempting to reconnect...");
+         wifiConnected = false;
+         connectToWiFi();
+       }
+       lastWiFiCheck = millis();
      }
-     lastWiFiCheck = millis();
-   }
 
-   // Handle LoRa reception
-   if (Serial1.available()) {
-     String resp = Serial1.readStringUntil('\n');
-     resp.trim();
+     // Handle LoRa reception
+     if (Serial1.available()) {
+       String resp = Serial1.readStringUntil('\n');
+       resp.trim();
 
-     if (resp.length() > 0) {
-       Serial.println("LoRa RX: " + resp);
+       if (resp.length() > 0) {
+         Serial.println("LoRa RX: " + resp);
 
-       // Check for received P2P data
-       if (resp.startsWith("+EVT:RXP2P")) {
-         // Extract payload from response
-         int idx = resp.lastIndexOf(':');
-         if (idx != -1) {
-           String hexPayload = resp.substring(idx + 1);
-           Serial.print("Received HEX payload: ");
-           Serial.println(hexPayload);
+         // Debug: Show all responses for troubleshooting
+         Serial.println("Debug - Raw response: [" + resp + "]");
 
-           // Convert HEX to decimal
-           int waterLevel = hexToDec(hexPayload);
-           currentWaterLevel = waterLevel;
+         // Check for different types of LoRa events
+         if (resp.startsWith("+EVT:RXP2P")) {
+           Serial.println("📡 P2P Packet detected!");
+           Serial.println("========================================");
+           Serial.println("🚀 LORA PACKET RECEIVED!");
+           Serial.println("========================================");
 
-           // Calculate percentage (assuming 200cm max depth)
-           currentPercentage = map(waterLevel, 0, 200, 0, 100);
-           currentPercentage = constrain(currentPercentage, 0, 100);
+           // Extract payload from response
+           int idx = resp.lastIndexOf(':');
+           if (idx != -1) {
+             String hexPayload = resp.substring(idx + 1);
+             Serial.print("📦 Raw HEX payload: ");
+             Serial.println(hexPayload);
 
-           Serial.println("--- Water Level Data ---");
-           Serial.print("Water level: ");
-           Serial.print(waterLevel);
-           Serial.println(" cm");
-           Serial.print("Percentage: ");
-           Serial.print(currentPercentage);
-           Serial.println("%");
+             // Convert HEX to decimal
+             int waterLevel = hexToDec(hexPayload);
+             currentWaterLevel = waterLevel;
 
-           // Send data to website if WiFi is connected
-           if (wifiConnected) {
-             Serial.println("Attempting to send data to website...");
-             retrySendData(waterLevel, currentPercentage, MAX_RETRY_ATTEMPTS);
+             // Calculate percentage (assuming 200cm max depth)
+             currentPercentage = map(waterLevel, 0, 200, 0, 100);
+             currentPercentage = constrain(currentPercentage, 0, 100);
+
+             Serial.println("📊 --- DECODED WATER LEVEL DATA ---");
+             Serial.print("💧 Water level: ");
+             Serial.print(waterLevel);
+             Serial.println(" cm");
+             Serial.print("📈 Tank fill: ");
+             Serial.print(currentPercentage);
+             Serial.println("%");
+             Serial.println("========================================");
+
+             // Send data to website if WiFi is connected
+             if (wifiConnected) {
+               Serial.println("🌐 Sending data to website...");
+               if (retrySendData(waterLevel, currentPercentage, MAX_RETRY_ATTEMPTS)) {
+                 Serial.println("✅ Data successfully sent to website!");
+               } else {
+                 Serial.println("❌ Failed to send data to website");
+               }
+             } else {
+               Serial.println("📵 WiFi not connected - data stored locally only");
+               Serial.println("💡 Data available for local monitoring");
+             }
+
+             // Re-enable RX
+             Serial1.println("AT+PRECV=65535");
+             Serial.println("🔄 Listening for next packet...");
+             Serial.println("========================================");
            } else {
-             Serial.println("WiFi not connected, data not sent to website");
+             Serial.println("⚠️  ERROR: Could not parse LoRa packet!");
            }
-
-           // Re-enable RX
-           Serial1.println("AT+PRECV=65535");
          }
        }
      }
-   }
 
-   delay(100);
- }
+     // Periodic status update for debugging
+     static unsigned long lastStatusUpdate = 0;
+     if (millis() - lastStatusUpdate > 5000) {  // Every 5 seconds
+       Serial.println("========================================");
+       Serial.println("📡 RX Status: Waiting for LoRa packets...");
+       Serial.print("📶 WiFi Connected: ");
+       Serial.println(wifiConnected ? "YES" : "NO");
+       Serial.print("🕐 Uptime: ");
+       Serial.print(millis() / 1000);
+       Serial.println(" seconds");
+
+       // Test LoRa module responsiveness
+       Serial.println("🔍 Testing LoRa module responsiveness...");
+       Serial1.println("AT");
+       delay(100);
+
+       // Ensure we're still in RX mode
+       Serial.println("🔄 Ensuring RX mode is active...");
+       Serial1.println("AT+PRECV=65535");
+       delay(200);
+
+       Serial.println("========================================");
+       lastStatusUpdate = millis();
+     }
+
+     delay(100);
+   }

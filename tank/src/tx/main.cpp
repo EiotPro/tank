@@ -82,7 +82,7 @@ void setup() {
   // LoRa P2P configuration
   Serial.println("Configuring LoRa P2P mode...");
   Serial1.println("AT+NWM=0");  // Set to P2P mode
-  delay(200);
+  delay(500);
 
   // Configure LoRa parameters using config values
   String p2pCommand = "AT+P2P=" +
@@ -93,12 +93,28 @@ void setup() {
                      String(LORA_PREAMBLE_LENGTH) + ":" +
                      String(LORA_TX_POWER);
 
+  Serial.println("Configuring LoRa parameters...");
+  Serial.println("Command: " + p2pCommand);
   Serial1.println(p2pCommand);
-  delay(200);
+  delay(500);
+
+  // Show configured parameters
+  Serial.println("📊 LoRa Parameters Set:");
+  Serial.println("   Frequency: " + String(LORA_FREQUENCY) + " Hz");
+  Serial.println("   Spreading Factor: " + String(LORA_SPREADING_FACTOR));
+  Serial.println("   Bandwidth: " + String(LORA_BANDWIDTH));
+  Serial.println("   Coding Rate: " + String(LORA_CODING_RATE));
+  Serial.println("   Preamble Length: " + String(LORA_PREAMBLE_LENGTH));
+  Serial.println("   TX Power: " + String(LORA_TX_POWER) + " dBm");
 
   // TX doesn't need RX
   Serial1.println("AT+PRECV=0");
-  delay(200);
+  delay(500);
+
+  // Test LoRa module communication
+  Serial.println("Testing LoRa module...");
+  Serial1.println("AT");
+  delay(500);
 
   Serial.println("TX Node initialization complete");
   Serial.println("Starting water level monitoring...");
@@ -116,28 +132,34 @@ void loop() {
     int waterLevel = readWaterLevel();
     int percentage = calculatePercentage(waterLevel);
 
-    Serial.println("\n--- Water Level Reading ---");
-    Serial.print("Raw sensor value: ");
+    Serial.println("\n========================================");
+    Serial.println("📤 TRANSMITTING WATER LEVEL DATA");
+    Serial.println("========================================");
+    Serial.print("📡 Raw sensor value: ");
     Serial.println(analogRead(WATER_SENSOR_PIN));
-    Serial.print("Water level: ");
+    Serial.print("💧 Water level: ");
     Serial.print(waterLevel);
     Serial.println(" cm");
-    Serial.print("Tank fill: ");
+    Serial.print("📈 Tank fill: ");
     Serial.print(percentage);
     Serial.println("%");
 
     // Convert to HEX payload (2 bytes: water level in cm)
     String hexPayload = decimalToHex(waterLevel);
 
-    Serial.print("HEX payload: ");
+    Serial.print("🔢 HEX payload to send: ");
     Serial.println(hexPayload);
+    Serial.println("📡 Sending via LoRa...");
 
     // Send data via LoRa
     if (sendLoRaData(hexPayload)) {
-      Serial.println("Data sent successfully");
+      Serial.println("✅ LoRa transmission successful!");
+      Serial.println("🚀 Data is on its way to receiver");
     } else {
-      Serial.println("Failed to send data");
+      Serial.println("❌ LoRa transmission failed!");
+      Serial.println("🔄 Will retry on next transmission");
     }
+    Serial.println("========================================");
 
     lastTransmission = millis();
   }
@@ -150,6 +172,16 @@ void loop() {
       Serial.print("LoRa Response: ");
       Serial.println(response);
     }
+  }
+
+  // Periodic status update for debugging
+  static unsigned long lastStatusUpdate = 0;
+  if (millis() - lastStatusUpdate > 15000) {  // Every 15 seconds
+    Serial.println("TX Status: Active and monitoring water level...");
+    Serial.print("Next transmission in: ");
+    Serial.print((TRANSMISSION_INTERVAL - (millis() - lastTransmission)) / 1000);
+    Serial.println(" seconds");
+    lastStatusUpdate = millis();
   }
 
   delay(100);  // Small delay to prevent overwhelming the system
