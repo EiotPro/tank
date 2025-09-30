@@ -1,0 +1,21 @@
+# Allow API access
+<Files "*">
+    Allow from all
+</Files>
+
+# Enable PHP for API files
+AddType application/x-httpd-php .php
+AddHandler application/x-httpd-php .php
+
+# Allow POST requests
+<Limit POST>
+    Allow from all
+</Limit>
+
+# Prevent directory listing in API folder
+Options -Indexes
+
+# Allow JSON content type
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "POST, GET, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type"
