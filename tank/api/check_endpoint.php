@@ -54,11 +54,11 @@ foreach ($dirs_to_check as $dir) {
 
 echo "<h3>🗄️ Database Connection Test:</h3>";
 try {
-    // Try live server credentials first
+    // Try local XAMPP credentials first
     $pdo = new PDO(
         "mysql:host=localhost;dbname=dwljzndr_tank",
-        "dwljzndr_tank",
-        "Amir@123#khan"
+        "root",
+        ""
     );
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     echo "✅ Database connection successful!<br>";

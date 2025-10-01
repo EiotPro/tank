@@ -61,6 +61,8 @@ exit();
         <h2>Available Interfaces:</h2>
 
         <a href="dashboard/" class="btn">📊 View Dashboard</a>
+        <a href="api/setup_local_database.php" class="btn">🏗️ Setup Database</a>
+        <a href="api/test_local_api.php" class="btn">🧪 Test APIs</a>
         <a href="dashboard/" class="btn">📊 Live Dashboard</a>
 
         <h3>API Endpoints:</h3>

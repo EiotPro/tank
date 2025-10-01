@@ -20,9 +20,9 @@
 #define WEB_SERVER_PORT 80
 
 // Website Configuration
-#define WEBSITE_HOST "iotlogic.in"  // Your computer's IP address (where XAMPP runs)
+#define WEBSITE_HOST "10.97.116.57"  // Your computer's IP address (where XAMPP runs)
 #define WEBSITE_PORT 80
-#define API_ENDPOINT "/tank/api/tank_update.php"  // MAIN: Production endpoint with authentication
+#define API_ENDPOINT "/Tank/tank/api/tank_update.php"  // MAIN: Production endpoint with authentication
 #define API_KEY "iotlogic"  // Generate a secure API key
 
 // HTTP Configuration

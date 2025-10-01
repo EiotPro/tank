@@ -3,7 +3,7 @@
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'dwljzndr_tank');
+define('DB_NAME', 'dwljzndr_tank'); // Change as needed
 
 // API Configuration
 define('API_KEY', 'iotlogic'); // Matches C++ configuration
