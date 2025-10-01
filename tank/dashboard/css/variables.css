@@ -1,0 +1,95 @@
+/* 🎨 CSS VARIABLES - Theme Colors & Design System */
+
+:root {
+    /* 🌈 Color Palette - Light Theme */
+    --bg-primary: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    --bg-secondary: #ffffff;
+    --card-bg: rgba(255, 255, 255, 0.85);
+    --card-hover: rgba(255, 255, 255, 0.95);
+    
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    
+    --color-primary: #4F46E5;
+    --color-primary-hover: #4338CA;
+    --color-success: #10B981;
+    --color-success-hover: #059669;
+    --color-warning: #F59E0B;
+    --color-warning-hover: #D97706;
+    --color-danger: #EF4444;
+    --color-danger-hover: #DC2626;
+    --color-info: #06B6D4;
+    --color-info-hover: #0891B2;
+    
+    /* 🎭 Gradients */
+    --gradient-primary: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+    --gradient-success: linear-gradient(135deg, #10B981 0%, #059669 100%);
+    --gradient-warning: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+    --gradient-danger: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+    --gradient-info: linear-gradient(135deg, #06B6D4 0%, #0891B2 100%);
+    
+    /* 🌊 Water Colors */
+    --water-color: #3B82F6;
+    --water-light: #60A5FA;
+    --water-dark: #2563EB;
+    
+    /* 📏 Spacing & Sizing */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-2xl: 3rem;
+    
+    --border-radius-sm: 8px;
+    --border-radius-md: 12px;
+    --border-radius-lg: 16px;
+    --border-radius-xl: 24px;
+    --border-radius-full: 9999px;
+    
+    /* 🎭 Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    
+    /* ⚡ Transitions */
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* 📐 Layout */
+    --header-height: 70px;
+    --container-max-width: 1400px;
+    --card-padding: 1.5rem;
+}
+
+/* 🌙 Dark Theme Variables */
+[data-theme="dark"] {
+    --bg-primary: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    --bg-secondary: #1e293b;
+    --card-bg: rgba(30, 41, 59, 0.8);
+    --card-hover: rgba(30, 41, 59, 0.95);
+    
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    
+    /* Lighter variants for dark theme */
+    --color-primary: #6366F1;
+    --color-primary-hover: #818CF8;
+    --color-success: #34D399;
+    --color-success-hover: #6EE7B7;
+    --color-warning: #FBBF24;
+    --color-warning-hover: #FCD34D;
+    --color-danger: #F87171;
+    --color-danger-hover: #FCA5A5;
+    --color-info: #22D3EE;
+    --color-info-hover: #67E8F9;
+    
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+}

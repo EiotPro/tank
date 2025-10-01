@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Water Tank Test - Filling & Draining Effects</title>
+    
+    <!-- CSS Files -->
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/tank-3d.css">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .test-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        .controls {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #495057;
+            font-weight: 600;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 8px;
+            border-radius: 5px;
+            background: linear-gradient(to right, #4fc3f7, #0288d1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fff;
+            border: 3px solid #0288d1;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fff;
+            border: 3px solid #0288d1;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .slider-value {
+            background: #0288d1;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 10px;
+            font-weight: 700;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .preset-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .preset-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .preset-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .preset-btn:active {
+            transform: translateY(0);
+        }
+
+        .preset-btn.critical { background: linear-gradient(135deg, #ef5350, #c62828); }
+        .preset-btn.low { background: linear-gradient(135deg, #ffa726, #f57c00); }
+        .preset-btn.medium { background: linear-gradient(135deg, #66bb6a, #388e3c); }
+        .preset-btn.high { background: linear-gradient(135deg, #4fc3f7, #0288d1); }
+        .preset-btn.full { background: linear-gradient(135deg, #42a5f5, #1976d2); }
+        .preset-btn.empty { background: linear-gradient(135deg, #78909c, #455a64); }
+
+        .info-panel {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .info-panel h3 {
+            margin: 0 0 10px 0;
+            color: #1976d2;
+            font-size: 1rem;
+        }
+
+        .info-panel ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #546e7a;
+            font-size: 0.85rem;
+            line-height: 1.8;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .status-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🌊 3D Water Tank</h1>
+        <p class="subtitle">Interactive Filling & Draining Effects Demo</p>
+
+        <!-- Tank Visualization -->
+        <div class="tank-3d-container" id="tank3dContainer">
+            <!-- Percentage Display -->
+            <div class="tank-3d-percentage" id="tank3dPercentage">0%</div>
+
+            <!-- Tank Body -->
+            <div class="tank-3d-body">
+                <div class="tank-cylinder">
+                    <!-- Water -->
+                    <div class="tank-3d-water" id="tank3dWater" data-level="critical">
+                        <!-- Bubbles -->
+                        <div class="tank-bubble"></div>
+                        <div class="tank-bubble"></div>
+                        <div class="tank-bubble"></div>
+                        <div class="tank-bubble"></div>
+                        <div class="tank-bubble"></div>
+                    </div>
+
+                    <!-- Glass Reflection -->
+                    <div class="tank-reflection"></div>
+                </div>
+
+                <!-- Level Marks -->
+                <div class="tank-level-marks">
+                    <div class="level-mark" data-level="100%"></div>
+                    <div class="level-mark" data-level="75%"></div>
+                    <div class="level-mark" data-level="50%"></div>
+                    <div class="level-mark" data-level="25%"></div>
+                    <div class="level-mark" data-level="0%"></div>
+                </div>
+            </div>
+
+            <!-- Status Ring -->
+            <div class="tank-status-ring"></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="waterLevel">💧 Water Level Control</label>
+                <div class="slider-container">
+                    <input type="range" id="waterLevel" min="0" max="100" value="0" step="1">
+                    <div class="slider-value" id="sliderValue">0%</div>
+                </div>
+            </div>
+
+            <div class="status-indicator">
+                <span class="status-label">Current Status:</span>
+                <span class="status-value" id="tankStatus" style="color: #ef5350;">Critical</span>
+            </div>
+
+            <div class="preset-buttons">
+                <button class="preset-btn empty" onclick="setLevel(0)">Empty</button>
+                <button class="preset-btn critical" onclick="setLevel(10)">Critical</button>
+                <button class="preset-btn low" onclick="setLevel(30)">Low</button>
+                <button class="preset-btn medium" onclick="setLevel(50)">Medium</button>
+                <button class="preset-btn high" onclick="setLevel(75)">High</button>
+                <button class="preset-btn full" onclick="setLevel(100)">Full</button>
+            </div>
+
+            <div class="info-panel">
+                <h3>✨ Features:</h3>
+                <ul>
+                    <li><strong>Filling:</strong> Splash effects, rising bubbles, water stream</li>
+                    <li><strong>Draining:</strong> Dripping water, vortex effect, drain stream</li>
+                    <li><strong>Colors:</strong> Dynamic colors based on water level</li>
+                    <li><strong>Smooth:</strong> Animated transitions with easing</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config -->
+    <script>
+        window.APP_CONFIG = {
+            log: (msg) => console.log(`[Tank3D] ${msg}`),
+            DEBUG: true
+        };
+    </script>
+
+    <!-- Tank3D Controller -->
+    <script src="js/tank3d.js"></script>
+
+    <!-- Interactive Controls -->
+    <script>
+        // Initialize tank
+        document.addEventListener('DOMContentLoaded', function() {
+            Tank3D.init();
+            
+            // Slider control
+            const slider = document.getElementById('waterLevel');
+            const sliderValue = document.getElementById('sliderValue');
+            const statusElement = document.getElementById('tankStatus');
+
+            slider.addEventListener('input', function() {
+                const level = parseInt(this.value);
+                sliderValue.textContent = level + '%';
+                Tank3D.updateWaterLevel(level);
+                updateStatus(level);
+            });
+
+            // Update status text and color
+            function updateStatus(level) {
+                const status = Tank3D.getWaterStatus(level);
+                statusElement.textContent = status.label;
+                statusElement.style.color = status.color;
+            }
+        });
+
+        // Preset level functions
+        function setLevel(level) {
+            const slider = document.getElementById('waterLevel');
+            const sliderValue = document.getElementById('sliderValue');
+            const statusElement = document.getElementById('tankStatus');
+            
+            slider.value = level;
+            sliderValue.textContent = level + '%';
+            Tank3D.updateWaterLevel(level);
+            
+            const status = Tank3D.getWaterStatus(level);
+            statusElement.textContent = status.label;
+            statusElement.style.color = status.color;
+        }
+
+        // Auto demo (optional - uncomment to enable)
+        // setTimeout(() => {
+        //     let level = 0;
+        //     let increasing = true;
+        //     setInterval(() => {
+        //         if (increasing) {
+        //             level += 5;
+        //             if (level >= 100) increasing = false;
+        //         } else {
+        //             level -= 5;
+        //             if (level <= 0) increasing = true;
+        //         }
+        //         setLevel(level);
+        //     }, 800);
+        // }, 2000);
+    </script>
+</body>
+</html>
