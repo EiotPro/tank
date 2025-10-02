@@ -20,7 +20,7 @@
 #define WEB_SERVER_PORT 80
 
 // Website Configuration
-#define WEBSITE_HOST "10.97.116.57"  // Your computer's IP address (where XAMPP runs)
+#define WEBSITE_HOST "10.55.94.57"  // Your computer's IP address (where XAMPP runs) - UPDATED!
 #define WEBSITE_PORT 80
 #define API_ENDPOINT "/Tank/tank/api/tank_update.php"  // MAIN: Production endpoint with authentication
 #define API_KEY "iotlogic"  // Generate a secure API key
@@ -34,8 +34,15 @@
 #define MAX_LOG_FILES 10
 #define LOG_FILE_PREFIX "/logs/tank_level_"
 
-// Sensor Configuration
-#define WATER_SENSOR_PIN A0
+// Sensor Configuration (TX node)
+#define WATER_SENSOR_PIN A0  // Analog sensor (not used if ultrasonic enabled)
+
+// Ultrasonic Sensor Configuration (HC-SR04) - TX Node
+#define USE_ULTRASONIC true  // Set to true to use ultrasonic sensor
+#define ULTRASONIC_TRIG_PIN 15  // GPIO15 - Trigger pin (you can change this)
+#define ULTRASONIC_ECHO_PIN 14  // GPIO14 - Echo pin (you can change this)
+#define ULTRASONIC_MAX_DISTANCE 400  // Maximum distance in cm
+#define ULTRASONIC_TIMEOUT 30000  // Timeout in microseconds
 
 // Hardware Pin Configuration
 #define RAK3172_RESET 2

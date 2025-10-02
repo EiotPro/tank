@@ -123,6 +123,35 @@ public:
     Config getConfig() {
         return config;
     }
+    
+    // Helper methods for easier access
+    bool hasCredentials() {
+        return config.configured;
+    }
+    
+    String getSSID() {
+        return String(config.ssid);
+    }
+    
+    String getPassword() {
+        return String(config.password);
+    }
+    
+    String getAPIEndpoint() {
+        return String(config.api_endpoint);
+    }
+    
+    String getAPIKey() {
+        return String(config.api_key);
+    }
+    
+    String getAPIHost() {
+        return String(config.api_host);
+    }
+    
+    uint16_t getAPIPort() {
+        return config.api_port;
+    }
 };
 
 const char* WiFiCredentials::CONFIG_FILE = "/wifi_config.json";

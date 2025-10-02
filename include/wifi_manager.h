@@ -4,19 +4,27 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include "wifi_credentials.h"
 
 // 🌐 WiFi Manager for Pico W with Beautiful Web Portal
 class WiFiManager {
 private:
     WebServer server;
+    DNSServer dnsServer;
     WiFiCredentials* credentials;
+    bool ap_mode;
     String ap_ssid;
     String ap_password;
-    
-    bool ap_mode;
     unsigned long ap_start_time;
+    
+    // Live data tracking
+    int* current_water_level;
+    int* current_percentage;
+    bool* wifi_connected;
+    
     static const unsigned long AP_TIMEOUT = 600000; // 10 minutes
+    static const byte DNS_PORT = 53;
     
     // 🎨 Beautiful HTML/CSS/JS Web Portal
     const char* getPortalHTML() {
@@ -279,6 +287,79 @@ private:
             font-size: 0.9rem;
             line-height: 1.6;
         }
+        
+        /* Slider Styles */
+        .slider-container {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+        }
+        
+        .slider-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        
+        .slider-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.3);
+            outline: none;
+            transition: all 0.2s;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+        }
+        
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+        }
+        
+        .slider::-moz-range-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 3px 12px rgba(0,0,0,0.4);
+        }
+        
+        .slider-marks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
@@ -289,10 +370,47 @@ private:
         </div>
         
         <div class="content">
+            <!-- Live Data Dashboard -->
+            <div class="info-box" id="liveDataBox" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white;">
+                <h4 style="color: white; font-size: 1.2rem;">📊 Live Tank Status</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                    <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Water Level</div>
+                        <div style="font-size: 2rem; font-weight: bold; margin: 5px 0;" id="waterLevel">--</div>
+                        <div style="font-size: 0.85rem; opacity: 0.8;">cm</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Tank Fill</div>
+                        <div style="font-size: 2rem; font-weight: bold; margin: 5px 0;" id="tankPercentage">--</div>
+                        <div style="font-size: 0.85rem; opacity: 0.8;">%</div>
+                    </div>
+                </div>
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                    <span style="opacity: 0.9;">WiFi Status:</span> 
+                    <strong id="wifiStatus">Checking...</strong>
+                </div>
+                
+                <!-- Refresh Rate Slider -->
+                <div class="slider-container">
+                    <div class="slider-label">🔄 Auto-Refresh Rate</div>
+                    <div class="slider-value" id="refreshValue">5 seconds</div>
+                    <input type="range" min="1" max="100" value="5" class="slider" id="refreshSlider" oninput="updateRefreshRate(this.value)">
+                    <div class="slider-marks">
+                        <span>1s</span>
+                        <span>1min</span>
+                        <span>10min</span>
+                        <span>60min</span>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 10px; text-align: center; font-size: 0.8rem; opacity: 0.7;" id="lastUpdate">Last updated: --</div>
+            </div>
+            
             <!-- Step 1: Select WiFi -->
             <div class="step" id="step1">
                 <div class="step-title">📡 Step 1: Select Your WiFi Network</div>
                 
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 10px;">Click the button below to scan for available networks:</p>
                 <button class="btn btn-secondary" onclick="scanNetworks()">🔄 Scan Networks</button>
                 
                 <div class="loader" id="scanLoader"></div>
@@ -333,11 +451,6 @@ private:
                     <div class="form-group">
                         <label for="api_endpoint">API Endpoint:</label>
                         <input type="text" id="api_endpoint" value="/Tank/tank/api/tank_update.php">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="api_key">API Key:</label>
-                        <input type="text" id="api_key" value="iotlogic" placeholder="API Key">
                     </div>
                 </div>
             </div>
@@ -435,6 +548,37 @@ private:
             icon.textContent = content.classList.contains('open') ? '▲' : '▼';
         }
         
+        // Update refresh rate slider
+        let refreshInterval = null;
+        let currentRefreshRate = 5; // Default 5 seconds
+        
+        function updateRefreshRate(value) {
+            // Convert slider value to seconds
+            // 1-60 = seconds (1s to 60s)
+            // 61-100 = minutes mapped to 1-60 minutes
+            let seconds;
+            let displayText;
+            
+            if (value <= 60) {
+                seconds = parseInt(value);
+                displayText = seconds + (seconds === 1 ? ' second' : ' seconds');
+            } else {
+                // Map 61-100 to 1-60 minutes
+                const minutes = Math.round((value - 60) * 1.5);
+                seconds = minutes * 60;
+                displayText = minutes + (minutes === 1 ? ' minute' : ' minutes');
+            }
+            
+            currentRefreshRate = seconds * 1000; // Convert to milliseconds
+            document.getElementById('refreshValue').textContent = displayText;
+            
+            // Restart the interval with new rate
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            refreshInterval = setInterval(fetchLiveData, currentRefreshRate);
+        }
+        
         // Save configuration
         function saveConfig() {
             const ssid = document.getElementById('ssid').value;
@@ -442,7 +586,7 @@ private:
             const api_host = document.getElementById('api_host').value;
             const api_port = document.getElementById('api_port').value;
             const api_endpoint = document.getElementById('api_endpoint').value;
-            const api_key = document.getElementById('api_key').value;
+            const api_key = 'iotlogic'; // Hardcoded API key
             
             if (!ssid || !password) {
                 showStatus('Please enter WiFi credentials', 'error');
@@ -498,9 +642,31 @@ private:
             }
         }
         
-        // Auto-scan on load
+        // Fetch live data
+        function fetchLiveData() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('waterLevel').textContent = data.water_level;
+                    document.getElementById('tankPercentage').textContent = data.percentage;
+                    document.getElementById('wifiStatus').textContent = data.wifi_connected ? '✅ Connected' : '❌ Disconnected';
+                    
+                    const now = new Date();
+                    document.getElementById('lastUpdate').textContent = 'Last updated: ' + now.toLocaleTimeString();
+                })
+                .catch(error => {
+                    document.getElementById('wifiStatus').textContent = '⚠️  No Data';
+                });
+        }
+        
+        // Auto-load behavior
         window.onload = function() {
-            setTimeout(scanNetworks, 1000);
+            fetchLiveData();  // Fetch data immediately
+            // DON'T auto-scan - let user click the button to avoid disconnections
+            // setTimeout(scanNetworks, 1000);  // REMOVED to prevent auto-disconnect
+            
+            // Start auto-refresh with default rate (5 seconds)
+            refreshInterval = setInterval(fetchLiveData, 5000); // 5000ms = 5 seconds
         };
     </script>
 </body>
@@ -509,8 +675,24 @@ private:
     }
 
 public:
-    WiFiManager(WebServer& srv, WiFiCredentials& cred) 
-        : server(srv), credentials(&cred), ap_mode(false), ap_start_time(0) {
+    unsigned long lastScanTime = 0;
+    const unsigned long SCAN_COOLDOWN = 10000; // 10 seconds between scans
+    bool scanInProgress = false;
+    
+    WiFiManager() 
+        : server(80), credentials(nullptr), ap_mode(false), ap_start_time(0),
+          current_water_level(nullptr), current_percentage(nullptr), wifi_connected(nullptr),
+          lastScanTime(0), scanInProgress(false) {
+    }
+    
+    void setCredentials(WiFiCredentials* cred) {
+        credentials = cred;
+    }
+    
+    void setLiveData(int* water_level, int* percentage, bool* wifi_conn) {
+        current_water_level = water_level;
+        current_percentage = percentage;
+        wifi_connected = wifi_conn;
     }
     
     // 🚀 Start Access Point Mode
@@ -523,13 +705,26 @@ public:
         char macStr[5];
         sprintf(macStr, "%02X%02X", mac[4], mac[5]);
         ap_ssid = "TankMonitor-" + String(macStr);
-        ap_password = ""; // Open network for easier first-time setup
+        ap_password = "12345678";  // 8-digit PIN (required by most phones)
         
         Serial.println("AP SSID: " + ap_ssid);
-        Serial.println("AP Password: " + (ap_password.length() > 0 ? ap_password : "None (Open)"));
+        Serial.println("AP Password: " + ap_password);
         
-        // Start AP
+        // Disconnect from any previous WiFi
+        WiFi.disconnect(true);
+        delay(100);
+        
+        // Start AP with NULL password for truly open network
         WiFi.mode(WIFI_AP);
+        
+        // Configure AP with specific IP settings
+        IPAddress local_IP(192, 168, 4, 1);
+        IPAddress gateway(192, 168, 4, 1);
+        IPAddress subnet(255, 255, 255, 0);
+        
+        WiFi.softAPConfig(local_IP, gateway, subnet);
+        
+        // Start AP with 4-digit password
         if (!WiFi.softAP(ap_ssid.c_str(), ap_password.c_str())) {
             Serial.println("❌ Failed to start AP");
             return false;
@@ -540,7 +735,12 @@ public:
         IPAddress IP = WiFi.softAPIP();
         Serial.println("✅ AP Started Successfully!");
         Serial.println("📱 Connect to: " + ap_ssid);
-        Serial.println("🌐 Open browser at: http://" + IP.toString());
+        Serial.println("🌐 Portal IP: http://" + IP.toString());
+        Serial.println("🌐 Or just open any webpage (captive portal)");
+        
+        // Setup DNS server for captive portal
+        dnsServer.start(DNS_PORT, "*", IP);
+        Serial.println("✅ DNS Server started (captive portal enabled)");
         
         // Setup web server routes
         setupWebServer();
@@ -550,6 +750,7 @@ public:
         ap_start_time = millis();
         
         Serial.println("🎉 Web Portal Ready!");
+        Serial.println("💡 Captive portal will auto-open when you connect");
         return true;
     }
     
@@ -560,18 +761,70 @@ public:
             server.send(200, "text/html", getPortalHTML());
         });
         
-        // Scan WiFi networks
+        // Captive portal detection endpoints
+        server.on("/generate_204", HTTP_GET, [this]() {  // Android
+            server.send(200, "text/html", getPortalHTML());
+        });
+        server.on("/gen_204", HTTP_GET, [this]() {  // Android alternative
+            server.send(200, "text/html", getPortalHTML());
+        });
+        server.on("/hotspot-detect.html", HTTP_GET, [this]() {  // iOS
+            server.send(200, "text/html", getPortalHTML());
+        });
+        server.on("/connecttest.txt", HTTP_GET, [this]() {  // Windows
+            server.send(200, "text/html", getPortalHTML());
+        });
+        server.on("/success.txt", HTTP_GET, [this]() {  // Firefox
+            server.send(200, "text/html", getPortalHTML());
+        });
+        
+        // Live data endpoint
+        server.on("/data", HTTP_GET, [this]() {
+            String json = "{";
+            json += "\"water_level\":" + String(current_water_level ? *current_water_level : 0) + ",";
+            json += "\"percentage\":" + String(current_percentage ? *current_percentage : 0) + ",";
+            json += "\"wifi_connected\":" + String(wifi_connected && *wifi_connected ? "true" : "false");
+            json += "}";
+            server.send(200, "application/json", json);
+        });
+        
+        // Scan WiFi networks (with cooldown to prevent blocking)
         server.on("/scan", HTTP_GET, [this]() {
+            // Check if scan is too frequent
+            if (millis() - lastScanTime < SCAN_COOLDOWN) {
+                Serial.println("⏱️  Scan requested too soon, returning empty");
+                server.send(200, "application/json", "{\"networks\":[]}");
+                return;
+            }
+            
+            if (scanInProgress) {
+                Serial.println("⏱️  Scan already in progress");
+                server.send(200, "application/json", "{\"networks\":[]}");
+                return;
+            }
+            
             Serial.println("📡 Scanning WiFi networks...");
+            scanInProgress = true;
+            lastScanTime = millis();
+            
+            // Scan networks (synchronous - Pico W doesn't support async)
             int n = WiFi.scanNetworks();
+            scanInProgress = false;
+            
+            if (n == -1) {
+                Serial.println("❌ Scan failed");
+                server.send(200, "application/json", "{\"networks\":[]}");
+                return;
+            }
             
             String json = "{\"networks\":[";
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < n && i < 20; i++) { // Limit to 20 networks
                 if (i > 0) json += ",";
-                json += "{\"ssid\":\"" + WiFi.SSID(i) + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
+                json += String("{\"ssid\":\"") + WiFi.SSID(i) + String("\",\"rssi\":") + String(WiFi.RSSI(i)) + String("}");
             }
             json += "]}";
             
+            Serial.println("✅ Scan complete, found " + String(n) + " networks");
             server.send(200, "application/json", json);
         });
         
@@ -627,15 +880,16 @@ public:
             }
         });
         
-        // 404 handler
+        // 404 handler - redirect everything to portal (captive portal)
         server.onNotFound([this]() {
-            server.send(404, "text/plain", "Not Found");
+            server.send(200, "text/html", getPortalHTML());
         });
     }
     
     // 🔄 Handle web server
-    void handle() {
+    void handleClient() {
         if (ap_mode) {
+            dnsServer.processNextRequest();  // Handle DNS requests for captive portal
             server.handleClient();
             
             // Check AP timeout
@@ -678,6 +932,11 @@ public:
     
     String getAPSSID() {
         return ap_ssid;
+    }
+    
+    // Alias for startAP
+    bool startAPMode() {
+        return startAP();
     }
 };
 

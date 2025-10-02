@@ -114,10 +114,10 @@ tank-monitoring-system/
 
 ### Transmitter Node (TX)
 - **Microcontroller**: Raspberry Pi Pico (standard)
-- **LoRa Module**: RAK3172 (868-915MHz)
+- **LoRa Module**: RAK3172 (865-915MHz)
 - **Sensor**: Analog water level sensor (0-5V output)
 - **Power**: Battery or 5V DC power supply
-- **Antenna**: 868/915MHz LoRa antenna
+- **Antenna**: 865/915MHz LoRa antenna
 
 ### Receiver Node (RX)
 - **Microcontroller**: Raspberry Pi Pico W (WiFi enabled)
@@ -337,9 +337,9 @@ chmod 644 tank/dashboard/*.php
 ```cpp
 #define WIFI_SSID "YourWiFiNetwork"   // WiFi network name
 #define WIFI_PASSWORD "YourPassword"  // WiFi password
-#define WEBSITE_HOST "192.168.1.100"  // Web server IP
+#define WEBSITE_HOST "computer ip"  // Web server IP
 #define WEBSITE_PORT 80               // Web server port
-#define API_ENDPOINT "/tank/api/tank_update.php"
+#define API_ENDPOINT "/Tank/api/tank_update.php"
 #define API_KEY "iotlogic"            // Must match PHP config
 ```
 

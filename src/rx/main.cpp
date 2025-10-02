@@ -2,6 +2,18 @@
 #include <HardwareSerial.h>
 #include <WiFi.h>
 #include "config.h"
+#include "wifi_credentials.h"
+#include "wifi_manager.h"
+#include "led_status.h"
+
+// Hardware Configuration
+#define CONFIG_BUTTON_PIN 17  // GPIO pin for configuration button (hold to enter AP mode) - OPTIONAL
+#define BUTTON_HOLD_TIME 3000 // Hold button for 3 seconds to enter config mode
+#define USE_CONFIG_BUTTON false  // Set to true if you have a physical button wired
+
+// Alternative config mode triggers
+#define MAX_WIFI_RETRY_ATTEMPTS 3  // After 3 failed attempts, enter config mode
+#define BOOT_COUNT_FILE "/boot_count.txt"  // File to track power cycles
 
 // Global variables
 int currentWaterLevel = 0;
@@ -9,6 +21,24 @@ int currentPercentage = 0;
 bool wifiConnected = false;
 unsigned long lastWiFiCheck = 0;
 const unsigned long WIFI_CHECK_INTERVAL = 30000; // Check WiFi every 30 seconds
+
+// System managers
+WiFiCredentials wifiCreds;
+WiFiManager wifiMgr;
+LEDStatusManager ledStatus;
+
+// Configuration mode state
+bool inConfigMode = false;
+unsigned long buttonPressStart = 0;
+bool buttonWasPressed = false;
+int wifiRetryCount = 0;
+unsigned long lastBootTime = 0;
+
+// Forward declaration
+void enterConfigMode();
+void checkSerialCommands();
+bool checkTriplePowerCycle();
+void clearBootCount();
 
 // Function to convert HEX string to decimal
 int hexToDec(String hexStr) {
@@ -28,31 +58,231 @@ int hexToDec(String hexStr) {
    return value;
  }
 
-// Function to connect to WiFi
+/**
+ * Check if config button is being held (OPTIONAL - only if USE_CONFIG_BUTTON is true)
+ */
+void checkConfigButton() {
+   if (!USE_CONFIG_BUTTON) return;  // Skip if no button configured
+   
+   bool buttonPressed = (digitalRead(CONFIG_BUTTON_PIN) == LOW); // Active LOW (with pullup)
+   
+   if (buttonPressed && !buttonWasPressed) {
+     // Button just pressed
+     buttonPressStart = millis();
+     buttonWasPressed = true;
+     Serial.println("🔘 Config button pressed...");
+   }
+   else if (buttonPressed && buttonWasPressed) {
+     // Button is being held
+     if (millis() - buttonPressStart >= BUTTON_HOLD_TIME && !inConfigMode) {
+       Serial.println("🔘 Config button held - entering AP mode!");
+       enterConfigMode();
+     }
+   }
+   else if (!buttonPressed && buttonWasPressed) {
+     // Button released
+     buttonWasPressed = false;
+     Serial.println("🔘 Config button released");
+   }
+}
+
+/**
+ * Check for serial commands to enter config mode
+ */
+void checkSerialCommands() {
+   if (Serial.available()) {
+     String command = Serial.readStringUntil('\n');
+     command.trim();
+     command.toLowerCase();
+     
+     if (command == "config" || command == "setup" || command == "wifi") {
+       Serial.println("\n🔧 Serial command received: Entering config mode...");
+       enterConfigMode();
+     }
+     else if (command == "clear" || command == "reset") {
+       Serial.println("\n🗑️  Clearing WiFi credentials...");
+       wifiCreds.clear();
+       Serial.println("✅ Credentials cleared. Rebooting...");
+       delay(2000);
+       rp2040.reboot();
+     }
+     else if (command == "status" || command == "info") {
+       Serial.println("\n📊 SYSTEM STATUS:");
+       Serial.println("   WiFi: " + String(wifiConnected ? "Connected" : "Disconnected"));
+       if (wifiConnected) {
+         Serial.println("   IP: " + WiFi.localIP().toString());
+         Serial.println("   SSID: " + WiFi.SSID());
+       }
+       Serial.println("   Has Credentials: " + String(wifiCreds.hasCredentials() ? "Yes" : "No"));
+       if (wifiCreds.hasCredentials()) {
+         Serial.println("   Saved SSID: " + wifiCreds.getSSID());
+       }
+       Serial.println("   In Config Mode: " + String(inConfigMode ? "Yes" : "No"));
+       Serial.println("   Uptime: " + String(millis() / 1000) + "s");
+     }
+     else if (command == "help" || command == "?") {
+       Serial.println("\n📋 AVAILABLE COMMANDS:");
+       Serial.println("   config/setup/wifi - Enter configuration mode");
+       Serial.println("   clear/reset       - Clear WiFi credentials");
+       Serial.println("   status/info       - Show system status");
+       Serial.println("   help/?            - Show this help");
+       Serial.println("   reboot            - Restart device");
+     }
+     else if (command == "reboot" || command == "restart") {
+       Serial.println("\n🔄 Rebooting...");
+       delay(1000);
+       rp2040.reboot();
+     }
+   }
+}
+
+/**
+ * Check for triple power cycle (power on/off 3 times within 10 seconds)
+ * This allows entering config mode by cycling power 3 times quickly
+ */
+bool checkTriplePowerCycle() {
+   // Check if boot count file exists
+   if (!LittleFS.exists(BOOT_COUNT_FILE)) {
+     // First boot or file deleted - create it
+     File f = LittleFS.open(BOOT_COUNT_FILE, "w");
+     if (f) {
+       f.println("1");
+       f.println(String(millis()));
+       f.close();
+     }
+     return false;
+   }
+   
+   // Read boot count and last boot time
+   File f = LittleFS.open(BOOT_COUNT_FILE, "r");
+   if (!f) return false;
+   
+   int bootCount = f.readStringUntil('\n').toInt();
+   unsigned long lastBoot = f.readStringUntil('\n').toInt();
+   f.close();
+   
+   unsigned long timeSinceLastBoot = millis();
+   
+   // If last boot was within 10 seconds, increment counter
+   if (timeSinceLastBoot < 10000 && lastBoot > 0) {
+     bootCount++;
+     Serial.println("⚡ Quick power cycle detected (" + String(bootCount) + "/3)");
+     
+     if (bootCount >= 3) {
+       Serial.println("🔧 Triple power cycle detected! Entering config mode...");
+       // Clear boot count
+       LittleFS.remove(BOOT_COUNT_FILE);
+       return true;
+     }
+   } else {
+     // More than 10 seconds since last boot - reset counter
+     bootCount = 1;
+   }
+   
+   // Update boot count file
+   f = LittleFS.open(BOOT_COUNT_FILE, "w");
+   if (f) {
+     f.println(String(bootCount));
+     f.println(String(millis()));
+     f.close();
+   }
+   
+   return false;
+}
+
+/**
+ * Clear boot count after successful WiFi connection
+ */
+void clearBootCount() {
+   if (LittleFS.exists(BOOT_COUNT_FILE)) {
+     LittleFS.remove(BOOT_COUNT_FILE);
+   }
+}
+
+/**
+ * Enter configuration mode (AP mode)
+ */
+void enterConfigMode() {
+   Serial.println("\n========================================");
+   Serial.println("🔧 ENTERING CONFIGURATION MODE");
+   Serial.println("========================================");
+   
+   inConfigMode = true;
+   ledStatus.setStatus(LED_AP_MODE);
+   
+   // Start WiFi Manager in AP mode
+   wifiMgr.startAPMode();
+   
+   Serial.println("📱 Configuration Portal Active!");
+   Serial.println("   SSID: " + wifiMgr.getAPSSID());
+   Serial.println("   IP: 192.168.4.1");
+   Serial.println("   Open browser and connect to configure WiFi");
+   Serial.println("========================================\n");
+}
+
+/**
+ * Connect to WiFi using saved credentials
+ */
 void connectToWiFi() {
    if (WiFi.status() == WL_CONNECTED) {
      wifiConnected = true;
+     ledStatus.setStatus(LED_CONNECTED);
      return;
    }
 
-   Serial.println("Connecting to WiFi...");
-   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+   ledStatus.setStatus(LED_CONNECTING);
+   Serial.println("📡 Connecting to WiFi...");
+   
+   // Load credentials from storage
+   if (!wifiCreds.hasCredentials()) {
+     Serial.println("❌ No WiFi credentials found!");
+     ledStatus.setStatus(LED_ERROR);
+     enterConfigMode();
+     return;
+   }
+   
+   String ssid = wifiCreds.getSSID();
+   String password = wifiCreds.getPassword();
+   
+   Serial.println("   SSID: " + ssid);
+   WiFi.begin(ssid.c_str(), password.c_str());
 
    int attempts = 0;
    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
      delay(500);
      Serial.print(".");
+     ledStatus.update(); // Keep LED pulsing
      attempts++;
    }
 
    if (WiFi.status() == WL_CONNECTED) {
      wifiConnected = true;
-     Serial.println("\nWiFi connected successfully!");
-     Serial.print("IP Address: ");
+     wifiRetryCount = 0;  // Reset retry counter on success
+     ledStatus.setStatus(LED_CONNECTED);
+     Serial.println("\n✅ WiFi connected successfully!");
+     Serial.print("   IP Address: ");
      Serial.println(WiFi.localIP());
+     clearBootCount();  // Clear power cycle counter
    } else {
      wifiConnected = false;
-     Serial.println("\nWiFi connection failed!");
+     wifiRetryCount++;
+     ledStatus.setStatus(LED_ERROR);
+     Serial.println("\n❌ WiFi connection failed!");
+     Serial.println("   Attempt " + String(wifiRetryCount) + "/" + String(MAX_WIFI_RETRY_ATTEMPTS));
+     Serial.println("\n💡 To enter config mode:");
+     Serial.println("   • Type 'config' in serial monitor");
+     Serial.println("   • Power cycle 3 times within 10 seconds");
+     if (USE_CONFIG_BUTTON) {
+       Serial.println("   • Hold config button for 3 seconds");
+     }
+     
+     // After multiple failures, automatically enter config mode
+     if (wifiRetryCount >= MAX_WIFI_RETRY_ATTEMPTS) {
+       Serial.println("\n⚠️  Maximum retry attempts reached!");
+       Serial.println("🔧 Automatically entering config mode...");
+       delay(2000);
+       enterConfigMode();
+     }
    }
  }
 
@@ -227,6 +457,59 @@ bool retrySendData(int waterLevel, int percentage, int maxAttempts) {
 
 void setup() {
    Serial.begin(SERIAL_BAUD_RATE);
+   delay(1000); // Wait for serial to initialize
+   
+   Serial.println("\n\n========================================");
+   Serial.println("🚀 PICO W TANK MONITOR - SMART BOOT");
+   Serial.println("========================================\n");
+   
+   // Initialize LED status
+   ledStatus.begin();
+   ledStatus.setStatus(LED_OFF);
+   
+   // Initialize config button (optional)
+   if (USE_CONFIG_BUTTON) {
+     pinMode(CONFIG_BUTTON_PIN, INPUT_PULLUP);
+     Serial.println("✅ Config button initialized on GPIO" + String(CONFIG_BUTTON_PIN));
+     Serial.println("   Hold button for 3s to enter config mode\n");
+   } else {
+     Serial.println("ℹ️  Physical config button disabled");
+     Serial.println("\n📋 Alternative config mode triggers:");
+     Serial.println("   1. Serial command: Type 'config' in serial monitor");
+     Serial.println("   2. Power cycle: Power on/off 3 times within 10 seconds");
+     Serial.println("   3. Auto-trigger: After 3 failed WiFi connection attempts");
+     Serial.println("   4. Type 'help' for all commands\n");
+   }
+   
+   // Initialize WiFi credential storage
+   Serial.println("📂 Initializing credential storage...");
+   wifiCreds.begin();
+   wifiCreds.load();
+   
+   // Link credentials to WiFi manager
+   wifiMgr.setCredentials(&wifiCreds);
+   
+   // Link live data to WiFi manager for dashboard
+   wifiMgr.setLiveData(&currentWaterLevel, &currentPercentage, &wifiConnected);
+   
+   // Check for triple power cycle trigger
+   if (checkTriplePowerCycle()) {
+     enterConfigMode();
+   }
+   
+   // Smart boot logic: Check for saved credentials
+   if (!wifiCreds.hasCredentials()) {
+     Serial.println("\n⚠️  No WiFi credentials found!");
+     Serial.println("   Starting in configuration mode...\n");
+     enterConfigMode();
+   } else {
+     Serial.println("\n✅ Found saved WiFi credentials");
+     Serial.println("   SSID: " + wifiCreds.getSSID());
+     Serial.println("   API Endpoint: " + wifiCreds.getAPIEndpoint());
+     Serial.println("   Attempting to connect...\n");
+   }
+   
+   // Initialize LoRa
    Serial1.begin(LORA_BAUD_RATE);
 
    // Initialize LoRa
@@ -293,20 +576,49 @@ void setup() {
    Serial1.println("AT");
    delay(500);
 
-   // Initialize WiFi
-   Serial.println("Initializing WiFi...");
-   connectToWiFi();
+   // Connect to WiFi (unless in config mode)
+   if (!inConfigMode) {
+     Serial.println("\n📡 Initializing WiFi connection...");
+     connectToWiFi();
+   }
 
-   Serial.println("RX Node initialization complete");
-   Serial.println("Ready to receive LoRa data and forward to website");
- }
+   Serial.println("\n========================================");
+   if (inConfigMode) {
+     Serial.println("⚙️  System in CONFIGURATION MODE");
+     Serial.println("   Connect to: " + wifiMgr.getAPSSID());
+     Serial.println("   IP: 192.168.4.1");
+   } else {
+     Serial.println("✅ RX Node initialization complete");
+     Serial.println("   WiFi: " + String(wifiConnected ? "Connected" : "Disconnected"));
+     Serial.println("   Ready to receive LoRa data");
+   }
+   Serial.println("========================================\n");
+}
 
 void loop() {
+     // Update LED status
+     ledStatus.update();
+     
+     // Check for serial commands (always active)
+     checkSerialCommands();
+     
+     // Check config button (only if enabled)
+     if (USE_CONFIG_BUTTON) {
+       checkConfigButton();
+     }
+     
+     // If in config mode, handle web server and skip normal operations
+     if (inConfigMode) {
+       wifiMgr.handleClient();
+       return;
+     }
+     
      // Check WiFi connection periodically
      if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
        if (WiFi.status() != WL_CONNECTED) {
-         Serial.println("WiFi disconnected, attempting to reconnect...");
+         Serial.println("📵 WiFi disconnected, attempting to reconnect...");
          wifiConnected = false;
+         ledStatus.setStatus(LED_CONNECTING);
          connectToWiFi();
        }
        lastWiFiCheck = millis();
@@ -365,6 +677,15 @@ void loop() {
              // Send data to website if WiFi is connected
              if (wifiConnected) {
                Serial.println("🌐 Sending data to website...");
+               
+               // Flash LED to indicate transmission
+               ledStatus.flashTransmit();
+
+               // Use saved API endpoint from credentials
+               String apiEndpoint = wifiCreds.getAPIEndpoint();
+               if (apiEndpoint.length() == 0) {
+                 apiEndpoint = API_ENDPOINT; // Fallback to config.h
+               }
 
                // First test if API is accessible
                if (testAPIAccessibility()) {
@@ -373,11 +694,14 @@ void loop() {
                    Serial.println("✅ Data successfully sent to website!");
                  } else {
                    Serial.println("❌ Failed to send data to website");
+                   ledStatus.setStatus(LED_ERROR);
+                   delay(2000);
+                   ledStatus.setStatus(LED_CONNECTED);
                  }
                } else {
                  Serial.println("🚫 API not accessible - check server configuration");
-                 Serial.println("💡 Try: https://iotlogic.in" + String(API_ENDPOINT));
-                 Serial.println("💡 Make sure tank_update_fixed.php is uploaded");
+                 Serial.println("💡 Try: https://iotlogic.in" + apiEndpoint);
+                 Serial.println("💡 Make sure API endpoint is configured correctly");
                }
              } else {
                Serial.println("📵 WiFi not connected - data stored locally only");
