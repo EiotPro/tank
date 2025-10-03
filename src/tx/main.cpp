@@ -7,13 +7,14 @@
 #include "config.h"
 
 // Global variables for sensor
-int lastValidDistance = 0;
-int lastRawSensorValue = 0;
+int lastValidDistance = 100;  // Initialize to mid-range (100cm) instead of 0
+int lastRawSensorValue = 512;  // Initialize to mid-range instead of 0
 int currentWaterLevel = 0;
 int currentPercentage = 0;
 int currentDistance = 0;
 bool loraTransmitSuccess = false;
 unsigned long lastTransmitTime = 0;
+bool sensorInitialized = false;  // Track if we've had at least one good reading
 
 // Web server and DNS for monitoring portal
 WebServer server(80);
@@ -290,15 +291,17 @@ int readWaterLevel() {
 }
 
 // Function to get raw sensor value for LoRa transmission
+// ⚠️  IMPORTANT: This function uses the LAST VALID distance reading
+// instead of re-reading the sensor to avoid timeout issues with ultrasonic sensors
 int getRawSensorValue() {
 #if USE_ULTRASONIC
-  long distanceToWater = readUltrasonicDistance();
+  // Use the already-read lastValidDistance instead of reading again
+  // This prevents timeout issues from double-reading the ultrasonic sensor
   
-  if (distanceToWater >= 0) {
-    // Map distance (0-TANK_MAX_DEPTH) to 0-1023 for compatibility with receiver
-    int rawValue = map(distanceToWater, 0, TANK_MAX_DEPTH, 1023, 0);
-    lastRawSensorValue = constrain(rawValue, 0, 1023);
-  }
+  // Map distance (0-TANK_MAX_DEPTH) to 0-1023 for compatibility with receiver
+  int rawValue = map(lastValidDistance, 0, TANK_MAX_DEPTH, 1023, 0);
+  lastRawSensorValue = constrain(rawValue, 0, 1023);
+  
   return lastRawSensorValue;
   
 #else
@@ -467,6 +470,36 @@ void setup() {
     Serial.println("❌ Failed to start AP");
   }
   
+  // Test ultrasonic sensor before starting
+  Serial.println("\n🧪 Testing Ultrasonic Sensor...");
+  Serial.println("========================================");
+#if USE_ULTRASONIC
+  for (int i = 0; i < 3; i++) {
+    Serial.println("Test #" + String(i + 1) + ":");
+    long testDistance = readUltrasonicDistance();
+    if (testDistance >= 0) {
+      Serial.println("✅ Sensor working! Distance: " + String(testDistance) + " cm");
+      sensorInitialized = true;
+      break;
+    } else {
+      Serial.println("❌ Test failed. Retrying...");
+      delay(500);
+    }
+  }
+  
+  if (!sensorInitialized) {
+    Serial.println("\n⚠️⚠️⚠️  SENSOR INITIALIZATION FAILED!");
+    Serial.println("🚨 Please check:");
+    Serial.println("   - HC-SR04 connected to GPIO" + String(ULTRASONIC_TRIG_PIN) + " (TRIG) and GPIO" + String(ULTRASONIC_ECHO_PIN) + " (ECHO)");
+    Serial.println("   - Sensor powered (VCC + GND)");
+    Serial.println("   - No obstacles in front of sensor");
+    Serial.println("\n🔄 Node will continue but may send invalid data!");
+  } else {
+    Serial.println("\n✅ Sensor initialized successfully!");
+  }
+#endif
+  Serial.println("========================================");
+  
   Serial.println("\n✅ TX Node initialization complete!");
   Serial.println("🚀 Starting water level monitoring...");
   Serial.print("   Transmission interval: ");
@@ -487,9 +520,20 @@ void loop() {
 #if USE_ULTRASONIC
     // Read ultrasonic sensor using trigger/echo
     Serial.println("🔊 Triggering ultrasonic pulse...");
+    
+    // Add diagnostic info
+    Serial.println("🔧 Sensor Pins:");
+    Serial.println("   TRIG: GPIO" + String(ULTRASONIC_TRIG_PIN));
+    Serial.println("   ECHO: GPIO" + String(ULTRASONIC_ECHO_PIN));
+    
     long distanceToWater = readUltrasonicDistance();
     
+    Serial.println("🔍 Sensor Response:");
+    Serial.println("   Distance returned: " + String(distanceToWater) + " cm");
+    
     if (distanceToWater >= 0) {
+      sensorInitialized = true;  // Mark that we've had a good reading
+      
       // Calculate water level
       int waterLevel = TANK_MAX_DEPTH - distanceToWater;
       waterLevel = constrain(waterLevel, 0, TANK_MAX_DEPTH);
@@ -523,7 +567,28 @@ void loop() {
         Serial.println("\n❌ Failed to send data");
       }
     } else {
-      Serial.println("⚠️  Sensor read failed - skipping transmission");
+      Serial.println("❌❌❌ CRITICAL: Sensor read failed!");
+      Serial.println("🔴 Possible issues:");
+      Serial.println("   1. Sensor not connected");
+      Serial.println("   2. Wrong GPIO pins (check TRIG/ECHO)");
+      Serial.println("   3. Sensor power issue");
+      Serial.println("   4. Timeout (no echo received)");
+      Serial.println("   5. Distance out of range (< 2cm or > " + String(ULTRASONIC_MAX_DISTANCE) + "cm)");
+      
+      if (!sensorInitialized) {
+        Serial.println("\n⚠️  WARNING: Sensor has NEVER returned a valid reading!");
+        Serial.println("🔧 Please check physical connections!");
+      } else {
+        Serial.println("\n🚨 Using last valid distance: " + String(lastValidDistance) + " cm");
+        // Still send data using last valid reading
+        int rawValue = lastRawSensorValue;
+        String hexPayload = decimalToHex(rawValue);
+        Serial.println("📡 Sending fallback value: " + String(rawValue) + " (HEX: " + hexPayload + ")");
+        loraTransmitSuccess = sendLoRaData(hexPayload);
+        lastTransmitTime = millis();
+      }
+      
+      Serial.println("\n⏩ Skipping this transmission cycle...");
     }
     
 #else

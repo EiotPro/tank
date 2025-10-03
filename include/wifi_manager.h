@@ -647,15 +647,29 @@ private:
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('waterLevel').textContent = data.water_level;
-                    document.getElementById('tankPercentage').textContent = data.percentage;
+                    // Handle invalid/no data state
+                    if (data.water_level < 0 || data.percentage < 0) {
+                        document.getElementById('waterLevel').textContent = '--';
+                        document.getElementById('tankPercentage').textContent = '--';
+                        document.getElementById('waterLevel').style.color = '#999';
+                        document.getElementById('tankPercentage').style.color = '#999';
+                    } else {
+                        document.getElementById('waterLevel').textContent = data.water_level;
+                        document.getElementById('tankPercentage').textContent = data.percentage;
+                        document.getElementById('waterLevel').style.color = '';
+                        document.getElementById('tankPercentage').style.color = '';
+                    }
+                    
                     document.getElementById('wifiStatus').textContent = data.wifi_connected ? '✅ Connected' : '❌ Disconnected';
                     
                     const now = new Date();
-                    document.getElementById('lastUpdate').textContent = 'Last updated: ' + now.toLocaleTimeString();
+                    const updateText = (data.water_level < 0) ? 'Waiting for LoRa data...' : 'Last updated: ' + now.toLocaleTimeString();
+                    document.getElementById('lastUpdate').textContent = updateText;
                 })
                 .catch(error => {
-                    document.getElementById('wifiStatus').textContent = '⚠️  No Data';
+                    document.getElementById('wifiStatus').textContent = '⚠️  Error';
+                    document.getElementById('waterLevel').textContent = '--';
+                    document.getElementById('tankPercentage').textContent = '--';
                 });
         }
         
@@ -781,8 +795,13 @@ public:
         // Live data endpoint
         server.on("/data", HTTP_GET, [this]() {
             String json = "{";
-            json += "\"water_level\":" + String(current_water_level ? *current_water_level : 0) + ",";
-            json += "\"percentage\":" + String(current_percentage ? *current_percentage : 0) + ",";
+            
+            // Check if we have valid data or use placeholder values
+            int waterLevel = (current_water_level && *current_water_level >= 0) ? *current_water_level : -1;
+            int percentage = (current_percentage && *current_percentage >= 0) ? *current_percentage : -1;
+            
+            json += "\"water_level\":" + String(waterLevel) + ",";
+            json += "\"percentage\":" + String(percentage) + ",";
             json += "\"wifi_connected\":" + String(wifi_connected && *wifi_connected ? "true" : "false");
             json += "}";
             server.send(200, "application/json", json);

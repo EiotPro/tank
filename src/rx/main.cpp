@@ -16,11 +16,16 @@
 #define BOOT_COUNT_FILE "/boot_count.txt"  // File to track power cycles
 
 // Global variables
-int currentWaterLevel = 0;
-int currentPercentage = 0;
+int currentWaterLevel = -1;  // Initialize to -1 (invalid) until first packet
+int currentPercentage = -1;  // Initialize to -1 (invalid) until first packet
 bool wifiConnected = false;
 unsigned long lastWiFiCheck = 0;
-const unsigned long WIFI_CHECK_INTERVAL = 30000; // Check WiFi every 30 seconds
+const unsigned long WIFI_CHECK_INTERVAL = 60000; // Check WiFi every 60 seconds (increased from 30s)
+
+// LoRa data tracking
+volatile bool hasLoRaData = false;  // Flag to indicate if we've received valid LoRa data
+volatile unsigned long lastLoRaMillis = 0;  // Timestamp of last valid LoRa packet
+const unsigned long DATA_TIMEOUT_MS = 30000;  // 30 seconds - mark data as stale if no packet
 
 // System managers
 WiFiCredentials wifiCreds;
@@ -221,7 +226,7 @@ void enterConfigMode() {
 }
 
 /**
- * Connect to WiFi using saved credentials
+ * Connect to WiFi using saved credentials (NON-BLOCKING)
  */
 void connectToWiFi() {
    if (WiFi.status() == WL_CONNECTED) {
@@ -247,12 +252,24 @@ void connectToWiFi() {
    Serial.println("   SSID: " + ssid);
    WiFi.begin(ssid.c_str(), password.c_str());
 
+   // Non-blocking connection - check status with timeout
+   unsigned long startAttempt = millis();
    int attempts = 0;
-   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-     delay(500);
-     Serial.print(".");
-     ledStatus.update(); // Keep LED pulsing
-     attempts++;
+   const int MAX_CONNECT_TIME = 10000; // 10 seconds timeout
+   
+   while (WiFi.status() != WL_CONNECTED && (millis() - startAttempt) < MAX_CONNECT_TIME) {
+     delay(100);  // Very short delay - allows LoRa to still function
+     
+     if ((millis() - startAttempt) % 500 == 0) {
+       Serial.print(".");
+       ledStatus.update();
+     }
+     
+     // Process LoRa even during WiFi connection attempt
+     if (Serial1.available()) {
+       String resp = Serial1.readStringUntil('\n');
+       // Buffer for later processing if needed
+     }
    }
 
    if (WiFi.status() == WL_CONNECTED) {
@@ -280,7 +297,7 @@ void connectToWiFi() {
      if (wifiRetryCount >= MAX_WIFI_RETRY_ATTEMPTS) {
        Serial.println("\n⚠️  Maximum retry attempts reached!");
        Serial.println("🔧 Automatically entering config mode...");
-       delay(2000);
+       delay(1000);  // Reduced from 2000ms
        enterConfigMode();
      }
    }
@@ -613,13 +630,28 @@ void loop() {
        return;
      }
      
-     // Check WiFi connection periodically
+     // ⏰ DATA TIMEOUT CHECK: Mark data as stale if no packet received recently
+     if (hasLoRaData && (millis() - lastLoRaMillis > DATA_TIMEOUT_MS)) {
+       Serial.println("⚠️  WARNING: No LoRa data received for " + String(DATA_TIMEOUT_MS / 1000) + " seconds");
+       Serial.println("🚨 Marking data as stale...");
+       hasLoRaData = false;
+       // Keep last values but flag as stale for web portal
+     }
+     
+     // Check WiFi connection periodically (non-blocking)
      if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
-       if (WiFi.status() != WL_CONNECTED) {
-         Serial.println("📵 WiFi disconnected, attempting to reconnect...");
+       if (WiFi.status() != WL_CONNECTED && wifiConnected) {
+         Serial.println("📵 WiFi disconnected, will attempt reconnect...");
          wifiConnected = false;
          ledStatus.setStatus(LED_CONNECTING);
-         connectToWiFi();
+         // Attempt non-blocking reconnect with saved credentials
+         if (wifiCreds.hasCredentials()) {
+           WiFi.begin(wifiCreds.getSSID().c_str(), wifiCreds.getPassword().c_str());
+         }
+       } else if (WiFi.status() == WL_CONNECTED && !wifiConnected) {
+         Serial.println("✅ WiFi reconnected!");
+         wifiConnected = true;
+         ledStatus.setStatus(LED_CONNECTED);
        }
        lastWiFiCheck = millis();
      }
@@ -635,44 +667,69 @@ void loop() {
          // Debug: Show all responses for troubleshooting
          Serial.println("Debug - Raw response: [" + resp + "]");
 
-         // Check for different types of LoRa events
-         if (resp.startsWith("+EVT:RXP2P")) {
-           Serial.println("📡 P2P Packet detected!");
-           Serial.println("========================================");
-           Serial.println("🚀 OPTIMIZED LORA PACKET RECEIVED!");
-           Serial.println("========================================");
+        // Check for different types of LoRa events
+        if (resp.startsWith("+EVT:RXP2P")) {
+          Serial.println("📡 P2P Packet detected!");
+          Serial.println("========================================");
+          Serial.println("🚀 OPTIMIZED LORA PACKET RECEIVED!");
+          Serial.println("========================================");
 
-           // Extract payload from response
-           int idx = resp.lastIndexOf(':');
-           if (idx != -1) {
-             String hexPayload = resp.substring(idx + 1);
-             Serial.print("📦 Raw HEX payload: ");
-             Serial.println(hexPayload);
+          // Extract payload from response
+          int idx = resp.lastIndexOf(':');
+          if (idx != -1) {
+            String hexPayload = resp.substring(idx + 1);
+            hexPayload.trim();
+            Serial.print("📦 Raw HEX payload: ");
+            Serial.println(hexPayload);
 
-             // 🚀 OPTIMIZATION: Convert HEX to raw sensor value (0-1023)
-             int rawSensorValue = hexToDec(hexPayload);
-             Serial.print("📡 Raw sensor value received: ");
-             Serial.println(rawSensorValue);
+            // ✅ VALIDATION: Check payload length (should be 4 hex chars for 2-byte value)
+            if (hexPayload.length() != 4) {
+              Serial.println("⚠️  ERROR: Invalid payload length (expected 4, got " + String(hexPayload.length()) + ")");
+              Serial.println("🛑 Packet discarded");
+              Serial1.println("AT+PRECV=65535");  // Re-enable RX
+              return;
+            }
 
-             // 💧 Calculate water level from raw sensor value
-             // Map 0-1023 sensor range to 200-0 cm (inverted logic)
-             int waterLevel = map(rawSensorValue, 0, 1023, TANK_MAX_DEPTH, 0);
-             waterLevel = constrain(waterLevel, 0, TANK_MAX_DEPTH);
-             currentWaterLevel = waterLevel;
+            // 🚀 Convert HEX to raw sensor value (0-1023)
+            int rawSensorValue = hexToDec(hexPayload);
+            Serial.print("📡 Raw sensor value received: ");
+            Serial.println(rawSensorValue);
 
-             // 📈 Calculate percentage
-             currentPercentage = map(waterLevel, 0, TANK_MAX_DEPTH, 0, 100);
-             currentPercentage = constrain(currentPercentage, 0, 100);
+            // ✅ VALIDATION: Bounds check (must be 0-1023)
+            if (rawSensorValue < 0 || rawSensorValue > 1023) {
+              Serial.println("⚠️  ERROR: Raw value out of range (0-1023): " + String(rawSensorValue));
+              Serial.println("🛑 Packet discarded");
+              Serial1.println("AT+PRECV=65535");  // Re-enable RX
+              return;
+            }
 
-             Serial.println("🧮 --- CALCULATIONS DONE ON RECEIVER ---");
-             Serial.print("💧 Water level: ");
-             Serial.print(waterLevel);
-             Serial.println(" cm");
-             Serial.print("📈 Tank fill: ");
-             Serial.print(currentPercentage);
-             Serial.println("%");
-             Serial.println("✅ All processing completed efficiently!");
-             Serial.println("========================================");
+            // 💧 Calculate water level from raw sensor value
+            // TX sends: map(distance, 0, 200, 1023, 0)
+            // So: Raw 1023 = 0cm distance (full tank = 200cm water)
+            //     Raw 0 = 200cm distance (empty tank = 0cm water)
+            // Therefore: waterLevel = Raw * 200 / 1023
+            int waterLevel = map(rawSensorValue, 0, 1023, 0, TANK_MAX_DEPTH);
+            waterLevel = constrain(waterLevel, 0, TANK_MAX_DEPTH);
+            
+            // 📈 Calculate percentage
+            int percentage = map(waterLevel, 0, TANK_MAX_DEPTH, 0, 100);
+            percentage = constrain(percentage, 0, 100);
+
+            // ✅ UPDATE GLOBALS: Mark data as valid and update timestamp
+            currentWaterLevel = waterLevel;
+            currentPercentage = percentage;
+            hasLoRaData = true;
+            lastLoRaMillis = millis();
+
+            Serial.println("🧮 --- CALCULATIONS DONE ON RECEIVER ---");
+            Serial.print("💧 Water level: ");
+            Serial.print(waterLevel);
+            Serial.println(" cm");
+            Serial.print("📈 Tank fill: ");
+            Serial.print(percentage);
+            Serial.println("%");
+            Serial.println("✅ Packet validated and processed successfully!");
+            Serial.println("========================================");
 
              // Send data to website if WiFi is connected
              if (wifiConnected) {
@@ -719,30 +776,35 @@ void loop() {
        }
      }
 
-     // Periodic status update for debugging
+     // Periodic status update for debugging (non-blocking)
      static unsigned long lastStatusUpdate = 0;
-     if (millis() - lastStatusUpdate > 5000) {  // Every 5 seconds
+     static unsigned long lastLoRaCheck = 0;
+     
+     if (millis() - lastStatusUpdate > 10000) {  // Every 10 seconds (reduced frequency)
        Serial.println("========================================");
        Serial.println("📡 RX Status: Waiting for optimized LoRa packets...");
        Serial.print("📶 WiFi Connected: ");
        Serial.println(wifiConnected ? "YES" : "NO");
+       Serial.print("📊 Data Status: ");
+       Serial.println(hasLoRaData ? "Valid" : "No data/Stale");
+       if (hasLoRaData) {
+         Serial.print("   Last packet: ");
+         Serial.print((millis() - lastLoRaMillis) / 1000);
+         Serial.println("s ago");
+       }
        Serial.print("🕐 Uptime: ");
        Serial.print(millis() / 1000);
        Serial.println(" seconds");
-
-       // Test LoRa module responsiveness
-       Serial.println("🔍 Testing LoRa module responsiveness...");
-       Serial1.println("AT");
-       delay(100);
-
-       // Ensure we're still in RX mode
-       Serial.println("🔄 Ensuring RX mode is active...");
-       Serial1.println("AT+PRECV=65535");
-       delay(200);
-
        Serial.println("========================================");
        lastStatusUpdate = millis();
      }
+     
+     // Periodically ensure LoRa RX mode is active (every 30s, non-blocking)
+     if (millis() - lastLoRaCheck > 30000) {
+       Serial.println("🔄 Re-enabling LoRa RX mode...");
+       Serial1.println("AT+PRECV=65535");
+       lastLoRaCheck = millis();
+     }
 
-     delay(100);
+     // NO DELAY - keep loop responsive for LoRa packets!
    }
